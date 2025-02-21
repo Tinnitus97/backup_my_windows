@@ -4,6 +4,16 @@ goto Get_Admin
 :Beginn
 set "dialog_auswahl=true"
 
+TITLE DASI-Skript
+
+set /p Version=<Versionscheck\Version.txt
+set Version=%Version: =%
+
+set /p Build=<Versionscheck\Build.txt
+set Build=%Build: =% 
+
+echo DASI-Skript Version %Version% von %Build%
+
 setlocal enabledelayedexpansion
 
 TITLE DASI-Skript
