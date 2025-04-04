@@ -27,12 +27,12 @@ goto Start_DASI-Skript
 start microsoft-edge:https://github.com/Tinnitus97/backup_my_windows
 exit
 
-:StartCOMPULANInstall
+:Start_DASI-Skript
 echo Das Update wurde uebersprungen!
 goto Start
 
 :keinupdateverfuegbar
-echo COMPULANInstall ist aktuell!
+echo DASI-Skript ist aktuell!
 goto Start
 
 :Start
