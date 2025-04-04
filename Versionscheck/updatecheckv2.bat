@@ -1,6 +1,6 @@
 @ Echo off
 TITLE DASI-Skript Updatecheck
-aria2c.exe --check-certificate=false --out "newversion.txt" https://github.com/Tinnitus97/backup_my_windows/blob/main/newversion.txt > nul
+aria2c.exe --check-certificate=false --out "newversion.txt" https://raw.githubusercontent.com/Tinnitus97/backup_my_windows/refs/heads/main/Versionscheck/newversion.txt > nul
 set /p Version=<Version.txt
 set Version=%Version: =%%
 set /p newversion=<newversion.txt
