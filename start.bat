@@ -14,6 +14,8 @@ set Build=%Build: =%
 
 echo DASI-Skript Version %Version% von %Build%
 
+call Versionscheck\Onlinecheck.bat
+
 setlocal enabledelayedexpansion
 
 TITLE DASI-Skript
