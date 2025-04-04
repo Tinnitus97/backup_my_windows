@@ -1,6 +1,6 @@
 @ Echo off
 TITLE DASI-Skript Updatecheck
-curl -s -o newversion.txt https://raw.githubusercontent.com/Tinnitus97/backup_my_windows/refs/heads/main/Versionscheck/newversion.txt > nul
+curl -s -o newversion.txt https://raw.githubusercontent.com/Tinnitus97/backup_my_windows/refs/heads/main/Versionscheck_Server/newversion.txt > nul
 set /p Version=<Version.txt
 set Version=%Version: =%%
 set /p newversion=<newversion.txt
