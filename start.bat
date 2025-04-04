@@ -6,15 +6,15 @@ set "dialog_auswahl=true"
 
 TITLE DASI-Skript
 
-set /p Version=<Version.txt
+set /p Version=<Versionscheck_Client\Version.txt
 set Version=%Version: =%
 
-set /p Build=<Build.txt
+set /p Build=<Versionscheck_Client\Build.txt
 set Build=%Build: =% 
 
 echo DASI-Skript Version %Version% von %Build%
 
-call Versionscheck\Onlinecheck.bat
+call Versionscheck_Client\Onlinecheck.bat
 
 setlocal enabledelayedexpansion
 
