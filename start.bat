@@ -6,10 +6,10 @@ set "dialog_auswahl=true"
 
 TITLE DASI-Skript
 
-set /p Version=<Versionscheck\Version.txt
+set /p Version=<Version.txt
 set Version=%Version: =%
 
-set /p Build=<Versionscheck\Build.txt
+set /p Build=<Build.txt
 set Build=%Build: =% 
 
 echo DASI-Skript Version %Version% von %Build%
