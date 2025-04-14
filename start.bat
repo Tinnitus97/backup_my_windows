@@ -137,13 +137,22 @@ exit
 echo.
 echo ---------Die Sicherung des kompletten Benutzerprofils von ausgewaehlten Benutzer wird ausgefuehrt---------
 echo.
-echo %destDir% | findstr /I "%userDir%" >nul
-if %errorlevel% equ 0 (
-    echo [FEHLER] Das Zielverzeichnis liegt im Benutzerverzeichnis. Sicherung wird abgebrochen...
+rem :: Ziel und Benutzerverzeichnis normalisieren (Backslashes entfernen, Kleinbuchstaben)
+set "normalizedDestDir=%destDir:\=/%"
+set "normalizedUserDir=%userDir:\=/%"
+setlocal EnableDelayedExpansion
+set "normalizedDestDir=!normalizedDestDir:~0,-1!"
+set "normalizedUserDir=!normalizedUserDir:~0,-1!"
+
+rem :: Prüfen, ob Zielpfad mit Benutzerverzeichnis beginnt
+echo !normalizedDestDir! | findstr /I /B /C:"!normalizedUserDir!" >nul
+if !errorlevel! equ 0 (
+    echo [FEHLER] Das Zielverzeichnis liegt im Benutzerverzeichnis oder einem Unterordner davon. Sicherung wird abgebrochen...
     goto :pauseAndExit 1
 ) else (
     echo [INFO] Das Zielverzeichnis liegt NICHT im Benutzerverzeichnis. Sicherung wird fortgesetzt...
 )
+endlocal
 
 robocopy "%userDir%" "%destDir%\Benutzerprofil" /MIR /ZB /SL /R:0 /W:0 /MT:4 /XJ /XA:SH /XD "%userDir%\Appdata" "%userDir%\Anwendungsdaten" "%userDir%\Application Data" "%userDir%\Cookies" "%userDir%\Links" "%userDir%\Favorites" "%userDir%\Local Settings" "%userDir%\My Documents" "%userDir%\NetHood" "%userDir%\PrintHood" "%userDir%\Recent" "%userDir%\Templates" "%userDir%\Start Menu" "%userDir%\Druckumgebung" "%userDir%\Netzwerkumgebung" "%userDir%\Recent" "%userDir%\SendTo" "%userDir%\Vorlagen" "%userDir%\Cookies" "%userDir%\Lokale Einstellungen" "%userDir%\Eigene Dateien"
 
