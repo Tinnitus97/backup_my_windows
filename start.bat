@@ -6,17 +6,17 @@ set "dialog_auswahl=true"
 
 TITLE DASI-Skript
 
-set /p Version=<Versionscheck\Version.txt
-set Version=%Version: =%
+setlocal enabledelayedexpansion
 
-set /p Build=<Versionscheck\Build.txt
-set Build=%Build: =% 
+:: PowerShell einlesen und gleich aufsplitten
+for /f "tokens=1,2 delims=|" %%a in ('powershell -nologo -command "Get-Content -Raw -Path \"Versionscheck\\Version.txt\""') do (
+    set "Version=%%a"
+    set "Build=%%b"
+)
 
-echo DASI-Skript Version %Version% von %Build%
+echo DASI-Skript Version !Version! von !Build!
 
 call Versionscheck\Onlinecheck.bat
-
-setlocal enabledelayedexpansion
 
 TITLE DASI-Skript
 
