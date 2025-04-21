@@ -39,49 +39,34 @@ exit /b
 for %%a in (%$asw%) do (
     if %%a==1 (
         set "dialog_auswahl=Benutzerprofil_export"
-        goto :waehle_dialog
+        call :Benutzerprofil_export
     )
     for %%b in (2 3 4 5) do (
         if %%a==%%b (
             set "dialog_auswahl=Profil_export"
-            goto :waehle_dialog
+            call :Profil_export
         )
     )
     if %%a==6 (
         set "dialog_auswahl=winget_export"
-        goto :waehle_dialog
+        call :winget_export
     )
     if %%a==7 (
         set "dialog_auswahl=Benutzerprofil_import"
-        goto :waehle_dialog
+        call :Benutzerprofil_import
     )
     for %%b in (8 9 10 11) do (
         if %%a==%%b (
             set "dialog_auswahl=Profil_import"
-            goto :waehle_dialog
+            call :Profil_import
         )
     )
     if %%a==12 (
         set "dialog_auswahl=winget_import"
-        goto :waehle_dialog
+        call :winget_import
     )
-)
-
-:waehle_dialog
-if "%dialog_auswahl%"=="Benutzerprofil_export" (
-    call :Benutzerprofil_export
-) else if "%dialog_auswahl%"=="Profil_export" (
-    call :Profil_export
-) else if "%dialog_auswahl%"=="winget_export" (
-    call :winget_export
-) else if "%dialog_auswahl%"=="Benutzerprofil_import" (
-    call :Benutzerprofil_import
-) else if "%dialog_auswahl%"=="Profil_import" (
-    call :Profil_import
-) else if "%dialog_auswahl%"=="winget_import" (
-    call :winget_import
-)
 exit /b
+)
 
 :Benutzerprofil_export
 call :select_folder "Bitte waehle das Benutzerprofil aus, das gesichert werden soll:" userDir
@@ -127,12 +112,6 @@ for /f "delims=" %%I in ('powershell -command "%psScript%"') do set "%2=%%I"
 if "%2%"=="" echo [FEHLER] Kein Ordner ausgewaehlt.
 exit /b
 
-:pauseAndExit
-echo.
-echo [INFO] Fehler bei der Eingabe. Druecken Sie eine beliebige Taste, um das Fenster zu schliessen.
-pause >nul
-exit
-
 :asw1
 echo.
 echo ---------Die Sicherung des kompletten Benutzerprofils von ausgewaehlten Benutzer wird ausgefuehrt---------
@@ -166,7 +145,7 @@ if %errorlevel% lss 8 (
 echo.
 echo ---------Die Sicherung des kompletten Benutzerprofils von ausgewaehlten Benutzer wurde ausgefuehrt--------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw2
@@ -192,7 +171,7 @@ if exist "%userDir%\AppData\Roaming\Mozilla\Firefox" (
 echo.
 echo ---------Die Sicherung von Firefox-Profil wurde ausgefuehrt---------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw3
@@ -218,7 +197,7 @@ if exist "%userDir%\AppData\Local\Microsoft\Edge\User Data\Default" (
 echo.
 echo ---------Die Sicherung von Edge-Profil wurde ausgefuehrt---------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw4
@@ -244,7 +223,7 @@ if exist "%userDir%\AppData\Local\Google\Chrome\User Data\Default" (
 echo.
 echo ---------Die Sicherung von Chrome-Profil wurde ausgefuehrt---------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw5
@@ -270,7 +249,7 @@ if exist "%userDir%\AppData\Roaming\Thunderbird" (
 echo.
 echo ---------Die Sicherung von Thunderbird-Profil wurde ausgefuehrt---------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw6
@@ -287,7 +266,7 @@ winget export "%destDir%\Winget\Export.json"
 echo.
 echo ---------Eine Liste der Installierten Programme wurde exportiert---------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw7
@@ -306,7 +285,7 @@ if %errorlevel% LSS 8 (
 echo.
 echo ---------Die Wiederherstellung des kompletten Benutzerprofils wurde ausgefuehrt---------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw8
@@ -336,7 +315,7 @@ if exist "%userDir%\Firefox-Profil" (
 echo.
 echo ---------Die Wiederherstellung von Firefox-Profil wurde ausgefuehrt---------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw9
@@ -366,7 +345,7 @@ if exist "%userDir%\Edge-Profil" (
 echo.
 echo ---------Die Wiederherstellung von Edge-Profil wurde ausgefuehrt---------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw10
@@ -396,7 +375,7 @@ if exist "%userDir%\Chrome-Profil" (
 echo.
 echo ---------Die Wiederherstellung von Chrome-Profil wurde ausgefuehrt---------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw11
@@ -426,7 +405,7 @@ if exist "%userDir%\Thunderbird-Profil" (
 echo.
 echo ---------Die Wiederherstellung des Thunderbird-Profils wurde ausgefuehrt---------
 echo.
-pause
+timeout 5
 exit/b
 
 :asw12
@@ -439,11 +418,13 @@ winget import "%userDir%\Winget\Export.json"
 echo.
 echo ---------Die exportierte Liste der Programme wurde installiertt---------
 echo.
-pause
+timeout 5
 exit/b
 
 :pauseAndExit
-pause
+echo.
+echo [INFO] Fehler bei der Eingabe. Druecken Sie eine beliebige Taste, um das Fenster zu schliessen.
+pause >nul
 exit
 
 :Get_Admin
