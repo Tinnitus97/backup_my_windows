@@ -11,6 +11,7 @@ Dieses Skript ermöglicht die einfache Sicherung und Wiederherstellung von Windo
   - Chrome
 - **E-Mail-Client Thunderbird sichern und wiederherstellen**
 - **Liste installierter Programme exportieren und wiederherstellen**
+- **Export und Import von WLAN-Profilen**
 
 ## Installation & Nutzung
 1. **Herunterladen**  
