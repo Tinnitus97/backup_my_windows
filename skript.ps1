@@ -2,7 +2,7 @@
 #Requires -RunAsAdministrator
 
 #------------------------------------------------------------------------------------
-# DASI-Skript - PowerShell Version
+# DASI-Skript - PowerShell Version (Optimiert & Fixes integriert)
 #------------------------------------------------------------------------------------
 
 # --- Globale Einstellungen und Initialisierung ---
@@ -10,7 +10,10 @@ $Host.UI.RawUI.WindowTitle = "DASI-Skript"
 
 # Lese die Version dynamisch aus der Versionsdatei.
 $script:VersionString = "0.0.0" # Standardwert
-$script:BuildString = "N/A"      # Standardwert
+$script:BuildString = "N/A"     # Standardwert
+# NEU: Variable fuer Performance-Modus
+$script:FastMode = $false
+
 try {
     # Pfad zur Versionsdatei im Unterordner "Versionscheck"
     $versionFilePath = Join-Path -Path $PSScriptRoot -ChildPath "Versionscheck\Version.txt"
@@ -20,17 +23,17 @@ try {
         $versionData = (Get-Content -Path $versionFilePath -Raw).Split('|')
         $script:VersionString = $versionData[0].Trim()
         $script:BuildString = $versionData[1].Trim()
-    } else {
+    }
+    else {
         # Fehlermeldung, wenn die Datei nicht existiert.
         Write-Warning "Die lokale Versionsdatei konnte nicht gefunden werden unter: $versionFilePath"
     }
 }
 catch {
-    # F ngt Fehler beim Lesen oder Verarbeiten der Datei ab.
+    # Faengt Fehler beim Lesen oder Verarbeiten der Datei ab.
     Write-Host "FEHLER beim Lesen der lokalen Versionsdatei." -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
 }
-
 
 $script:GlobalSourceUserProfileDir = $null
 $script:GlobalBackupBaseDir = $null
@@ -67,7 +70,8 @@ function Select-FolderDialog {
 
         if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
             return [string]$dialog.SelectedPath
-        } else {
+        }
+        else {
             return $null
         }
     }
@@ -87,13 +91,47 @@ function Invoke-PauseAndExit {
     Write-Host "Druecken Sie eine beliebige Taste, um das Fenster zu schliessen..." -NoNewline
     if ($Host.Name -eq "ConsoleHost") {
         $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null
-    } else {
+    }
+    else {
         Read-Host
     }
     exit
 }
 
-# Funktion zur Pr fung und Installation von Anwendungsupdates (Firefox/Thunderbird)
+# --- NEU: Funktion zur Pruefung, ob ein Laufwerk NTFS-formatiert ist ---
+function Test-IsNtfsDrive {
+    param(
+        [string]$Path
+    )
+    try {
+        # Stammverzeichnis (Laufwerksbuchstabe) aus dem Pfad extrahieren
+        $driveRoot = [System.IO.Path]::GetPathRoot($Path)
+        
+        # Netzwerkpfade (UNC) ueberspringen, da dort die lokale Abfrage oft nicht funktioniert
+        if ($driveRoot.StartsWith("\")) {
+            Write-Host "[INFO] Netzwerkpfad erkannt. Lokale NTFS-Pruefung wird uebersprungen." -ForegroundColor Cyan
+            return $true
+        }
+        
+        # Laufwerksinformationen abrufen
+        $driveInfo = [System.IO.DriveInfo]::new($driveRoot)
+        
+        # Pruefen, ob das Format "NTFS" ist (Gross-/Kleinschreibung wird ignoriert)
+        if ($driveInfo.DriveFormat -ine "NTFS") {
+            return $false
+        }
+        
+        return $true
+    }
+    catch {
+        Write-Warning "Konnte das Dateisystem fuer '$Path' nicht ermitteln: $($_.Exception.Message)"
+        # Im Zweifel einen Abbruch erzwingen, wenn das Laufwerk gar nicht lesbar ist
+        return $false 
+    }
+}
+# ------------------------------------------------------------------------
+
+# Funktion zur Pruefung und Installation von Anwendungsupdates (Firefox/Thunderbird)
 function Invoke-AppUpdateCheckAndInstall {
     param(
         [string]$AppName,
@@ -116,11 +154,13 @@ function Invoke-AppUpdateCheckAndInstall {
                 $installedVersion = [version]($installedVersionString.Split(' ')[0])
                 Write-Host "[INFO] Installierte $AppName Version: $installedVersion"
             }
-        } else {
+        }
+        else {
             Write-Host "[WARNUNG] $AppName scheint nicht installiert zu sein oder wurde im Registrierungspfad nicht gefunden. Update-Pruefung wird uebersprungen."
             return # Funktion beenden, wenn nicht gefunden
         }
-    } catch {
+    }
+    catch {
         Write-Warning "Konnte installierte Version von $AppName nicht ermitteln: $($_.Exception.Message). Update-Pruefung wird uebersprungen."
         return
     }
@@ -133,12 +173,15 @@ function Invoke-AppUpdateCheckAndInstall {
         $versionInfo = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing
         if ($productIdentifier -eq "firefox") {
             $latestVersionString = $versionInfo.LATEST_FIREFOX_VERSION
-        } else { # thunderbird
+        }
+        else {
+            # thunderbird
             $latestVersionString = $versionInfo.LATEST_THUNDERBIRD_VERSION
         }
         $latestVersion = [version]$latestVersionString
         Write-Host "[INFO] Neueste verfuegbare $AppName Version: $latestVersion"
-    } catch {
+    }
+    catch {
         Write-Warning "Konnte neueste Version von $AppName nicht von Mozilla abrufen: $($_.Exception.Message). Update-Pruefung wird uebersprungen."
         return
     }
@@ -147,7 +190,7 @@ function Invoke-AppUpdateCheckAndInstall {
     if ($latestVersion -gt $installedVersion) {
         Write-Host "[AKTION] Eine neuere Version von $AppName ($latestVersion) ist verfuegbar. Update wird durchgefuehrt." -ForegroundColor Yellow
         
-        # Anwendung vor dem Update schlie en
+        # Anwendung vor dem Update schließen
         $processName = $ExeName.Replace(".exe", "")
         Write-Host "[INFO] Der $AppName ($processName) wird nun beendet (falls er laeuft)..."
         Get-Process $processName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -161,7 +204,8 @@ function Invoke-AppUpdateCheckAndInstall {
             Write-Host "[INFO] Lade die neueste Version von $AppName herunter..."
             Invoke-WebRequest -Uri $downloadUrl -OutFile $installerPath -UseBasicParsing
             Write-Host "[ERFOLG] Download abgeschlossen." -ForegroundColor Green
-        } catch {
+        }
+        catch {
             Write-Host "[FEHLER] Download des $AppName Installers fehlgeschlagen: $($_.Exception.Message)" -ForegroundColor Red
             if (Test-Path $installerPath) { Remove-Item $installerPath -Force }
             return
@@ -172,20 +216,23 @@ function Invoke-AppUpdateCheckAndInstall {
             Write-Host "[INFO] Starte die stille Installation von $AppName. Bitte warten..."
             Start-Process -FilePath $installerPath -ArgumentList "-ms" -Wait -ErrorAction Stop
             Write-Host "[ERFOLG] $AppName wurde erfolgreich aktualisiert." -ForegroundColor Green
-        } catch {
+        }
+        catch {
             Write-Host "[FEHLER] Die Installation von $AppName ist fehlgeschlagen: $($_.Exception.Message)" -ForegroundColor Red
-        } finally {
+        }
+        finally {
             if (Test-Path $installerPath) { Remove-Item $installerPath -Force }
         }
         
-    } else {
+    }
+    else {
         Write-Host "[INFO] $AppName ist bereits auf der neuesten Version." -ForegroundColor Green
     }
-     Write-Host "--------------------------------------------------------------------------------------------------------------`n"
+    Write-Host "--------------------------------------------------------------------------------------------------------------`n"
 }
 
 # Funktion, die sicherstellt, dass eine App installiert ist
-function Ensure-AppIsInstalled {
+function Install-App {
     param (
         [string]$AppName,
         [string]$ExeName
@@ -194,12 +241,12 @@ function Ensure-AppIsInstalled {
     Write-Host "`n--------------------------------------------------------------------------------------------------------------"
     Write-Host "[INFO] Pruefe, ob $AppName installiert ist..."
     
-    # Pr fen, ob der App Path in der Registry existiert
+    # Pruefen, ob der App Path in der Registry existiert
     $appPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$ExeName"
     if (-not (Test-Path $appPath)) {
         Write-Host "[WARNUNG] $AppName scheint nicht installiert zu sein." -ForegroundColor Yellow
         
-        # Sonderfall f r Edge
+        # Sonderfall fuer Edge
         if ($AppName -eq "Edge") {
             Write-Host "[INFO] Microsoft Edge ist eine Kernkomponente von Windows und sollte vorhanden sein. Installation wird uebersprungen."
             Write-Host "--------------------------------------------------------------------------------------------------------------`n"
@@ -213,35 +260,38 @@ function Ensure-AppIsInstalled {
             return # Funktion verlassen
         }
 
-        # Winget-ID f r deutsche Versionen verwenden
+        # Winget-ID fuer deutsche Versionen verwenden
         $wingetId = switch ($AppName) {
-            "Firefox"     { "Mozilla.Firefox.de" }
+            "Firefox" { "Mozilla.Firefox.de" }
             "Thunderbird" { "Mozilla.Thunderbird.de" }
-            "Chrome"      { "Google.Chrome" }
-            default       { $null }
+            "Chrome" { "Google.Chrome" }
+            default { $null }
         }
 
         if (-not $wingetId) {
-             Write-Host "[FEHLER] Keine Winget-ID fuer '$AppName' definiert. Installation kann nicht durchgefuehrt werden." -ForegroundColor Red
-             return
+            Write-Host "[FEHLER] Keine Winget-ID fuer '$AppName' definiert. Installation kann nicht durchgefuehrt werden." -ForegroundColor Red
+            return
         }
 
         # Installation mit Winget
         try {
-             Write-Host "[INFO] Versuche, $AppName (ID: $wingetId) mit Winget zu installieren..."
-             winget install --id $wingetId -e --accept-package-agreements --accept-source-agreements
-             if ($LASTEXITCODE -eq 0) {
-                 Write-Host "[ERFOLG] $AppName wurde erfolgreich installiert." -ForegroundColor Green
-             } else {
-                 Write-Host "[FEHLER] Winget-Installation fehlgeschlagen mit Fehlercode: $LASTEXITCODE" -ForegroundColor Red
-             }
-        } catch {
+            Write-Host "[INFO] Versuche, $AppName (ID: $wingetId) mit Winget zu installieren..."
+            winget install --id $wingetId -e --accept-package-agreements --accept-source-agreements
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "[ERFOLG] $AppName wurde erfolgreich installiert." -ForegroundColor Green
+            }
+            else {
+                Write-Host "[FEHLER] Winget-Installation fehlgeschlagen mit Fehlercode: $LASTEXITCODE" -ForegroundColor Red
+            }
+        }
+        catch {
             Write-Host "[FEHLER] Fehler bei der Ausfuehrung von Winget: $($_.Exception.Message)" -ForegroundColor Red
         }
 
-    } else {
-         # App ist bereits installiert.
-         Write-Host "[INFO] $AppName ist bereits installiert. Pruefung abgeschlossen."
+    }
+    else {
+        # App ist bereits installiert.
+        Write-Host "[INFO] $AppName ist bereits installiert. Pruefung abgeschlossen."
     }
     Write-Host "--------------------------------------------------------------------------------------------------------------`n"
 }
@@ -266,7 +316,7 @@ function Backup-UserProfile {
     Write-Host "---------Die Sicherung des kompletten Benutzerprofils von '$userDir' wird ausgefuehrt---------" -ForegroundColor Cyan
     Write-Host "---------Ziel-Basisverzeichnis: '$destParentDir' ---------" -ForegroundColor Cyan
 
-    # Pr fen, ob Zielpfad im Benutzerverzeichnis liegt (relevant, falls BackupBaseDir manuell in UserProfile gelegt wurde)
+    # Pruefen, ob Zielpfad im Benutzerverzeichnis liegt
     try {
         $fullUserDir = (Get-Item -LiteralPath $userDir -ErrorAction Stop).FullName
         $fullDestParentDir = (Get-Item -LiteralPath $destParentDir -ErrorAction Stop).FullName
@@ -275,37 +325,37 @@ function Backup-UserProfile {
         if ($backupTargetDir.StartsWith($fullUserDir, [System.StringComparison]::OrdinalIgnoreCase)) {
             Write-Host "[FEHLER] Das Backup-Zielverzeichnis '$backupTargetDir' liegt im zu sichernden Benutzerverzeichnis '$fullUserDir'. Sicherung wird abgebrochen..." -ForegroundColor Red
             return $false
-        } else {
+        }
+        else {
             Write-Host "[INFO] Das Backup-Zielverzeichnis '$backupTargetDir' liegt NICHT im Benutzerverzeichnis. Sicherung wird fortgesetzt..."
         }
-    } catch {
-        Write-Host "[FEHLER] Fehler beim  berpr fen der Pfade: $($_.Exception.Message)" -ForegroundColor Red
+    }
+    catch {
+        Write-Host "[FEHLER] Fehler beim ueberpruefen der Pfade: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 
-    # Korrektur des $excludedDirs Arrays: Jedes Join-Path ist ein separates Element
     $excludedDirs = @(
         (Join-Path $userDir "AppData")
-        (Join-Path $userDir "Anwendungsdaten") # German legacy name
-        (Join-Path $userDir "Application Data") # English legacy name
+        (Join-Path $userDir "Anwendungsdaten") 
+        (Join-Path $userDir "Application Data") 
         (Join-Path $userDir "Cookies")
-        (Join-Path $userDir "Links") # Usually a junction
-        (Join-Path $userDir "Favorites") # Usually a junction
-        (Join-Path $userDir "Local Settings") # Legacy
-        (Join-Path $userDir "My Documents") # Usually a junction
-        (Join-Path $userDir "NetHood") # Usually a junction
-        (Join-Path $userDir "PrintHood") # Usually a junction
-        (Join-Path $userDir "Recent") # Usually a junction
-        (Join-Path $userDir "Templates") # Usually a junction
-        (Join-Path $userDir "Start Menu") # Usually a junction
-        (Join-Path $userDir "Druckumgebung") # German for PrintHood
-        (Join-Path $userDir "Netzwerkumgebung") # German for NetHood
-        (Join-Path $userDir "SendTo") # Usually a junction
-        (Join-Path $userDir "Vorlagen") # German for Templates
-        (Join-Path $userDir "Lokale Einstellungen") # German for Local Settings
-        (Join-Path $userDir "Eigene Dateien") # German for My Documents
+        (Join-Path $userDir "Links") 
+        (Join-Path $userDir "Favorites") 
+        (Join-Path $userDir "Local Settings") 
+        (Join-Path $userDir "My Documents") 
+        (Join-Path $userDir "NetHood") 
+        (Join-Path $userDir "PrintHood") 
+        (Join-Path $userDir "Recent") 
+        (Join-Path $userDir "Templates") 
+        (Join-Path $userDir "Start Menu") 
+        (Join-Path $userDir "Druckumgebung") 
+        (Join-Path $userDir "Netzwerkumgebung") 
+        (Join-Path $userDir "SendTo") 
+        (Join-Path $userDir "Vorlagen") 
+        (Join-Path $userDir "Lokale Einstellungen") 
+        (Join-Path $userDir "Eigene Dateien") 
         (Join-Path $userDir "Dropbox")
-        (Join-Path $userDir "OneDrive")
         (Join-Path $userDir "HiDrive")
         (Join-Path $userDir "Google Drive")
         (Join-Path $userDir "iCloudDrive")
@@ -315,24 +365,39 @@ function Backup-UserProfile {
         (Join-Path $userDir "AppData\Local\Microsoft\Edge\User Data\Default\Cache")
     )
 
+    # Dynamische Suche nach OneDrive Ordnern
+    $oneDriveFolders = Get-ChildItem -Path $userDir -Filter "OneDrive*" -Directory -ErrorAction SilentlyContinue
+    if ($oneDriveFolders) {
+        foreach ($folder in $oneDriveFolders) {
+            Write-Host "[INFO] Fuege OneDrive-Ordner zum Ausschluss hinzu: $($folder.FullName)"
+            $excludedDirs += $folder.FullName
+        }
+    }
+
     $robocopyArgs = @(
         "`"$userDir`"",
         "`"$backupTargetDir`"",
-        "/MIR", "/ZB", "/SL", "/R:0", "/W:0", "/MT:4", "/XJ", "/XA:SH", "/ETA"
+        "/MIR", "/ZB", "/SL", "/R:0", "/W:0", "/MT:32", "/XJ", "/XA:SH", "/ETA"
     )
+    # Performance-Optimierung
+    if ($script:FastMode) {
+        $robocopyArgs += "/NP", "/NFL", "/NDL"
+    }
+
     foreach ($exDir in $excludedDirs) {
         if (Test-Path $exDir) {
             $robocopyArgs += "/XD", "`"$exDir`""
         }
     }
     
-    Write-Host "[INFO] Starte Robocopy f r Benutzerprofil-Sicherung. Dies kann einige Zeit dauern..."
+    Write-Host "[INFO] Starte Robocopy fuer Benutzerprofil-Sicherung. Dies kann einige Zeit dauern..."
     Write-Host "Robocopy Befehl: robocopy $($robocopyArgs -join ' ')"
     & robocopy @robocopyArgs 2>&1 | Out-Host
 
     if ($LASTEXITCODE -lt 8) {
         Write-Host "[ERFOLG] Benutzerprofil wurde erfolgreich gesichert nach '$backupTargetDir'." -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "[FEHLER] Fehler beim Sichern des Benutzerprofils. Robocopy Fehlercode: $LASTEXITCODE" -ForegroundColor Red
         return $false
     }
@@ -341,7 +406,97 @@ function Backup-UserProfile {
     return $true
 }
 
-# 7. Windows Benutzerprofil wiederherstellen
+# 7. WLAN Profile exportieren
+function Export-WlanProfiles {
+    Write-Host "`n=============================================================================================================="
+    Write-Host "                WLAN Profile exportieren"
+    Write-Host "=============================================================================================================="
+    Write-Host ""
+    
+    if (-not $script:GlobalBackupBaseDir) {
+        Write-Host "[FEHLER] Globales Backup-Basisverzeichnis ist nicht gesetzt. Aktion uebersprungen." -ForegroundColor Red
+        return $false
+    }
+    
+    $destDir = Join-Path $script:GlobalBackupBaseDir "WLAN-Profile"
+    
+    # Ordner erstellen, falls nicht vorhanden
+    if (-not (Test-Path $destDir)) {
+        try {
+            New-Item -ItemType Directory -Path $destDir -Force -ErrorAction Stop | Out-Null
+        }
+        catch {
+            Write-Host "[FEHLER] Konnte Verzeichnis '$destDir' nicht erstellen: $($_.Exception.Message)" -ForegroundColor Red
+            return $false
+        }
+    }
+
+    Write-Host "---------Exportiere WLAN Profile nach '$destDir'---------" -ForegroundColor Cyan
+    
+    try {
+        Write-Host "[INFO] Fuehre 'netsh wlan export profile' aus..."
+        $output = netsh wlan export profile folder="$destDir" key=clear
+        
+        $xmlFiles = Get-ChildItem -Path $destDir -Filter "*.xml"
+        if ($xmlFiles.Count -gt 0) {
+            Write-Host "[ERFOLG] Es wurden $($xmlFiles.Count) WLAN-Profile erfolgreich exportiert." -ForegroundColor Green
+        }
+        else {
+            Write-Host "[WARNUNG] Es wurden keine WLAN-Profile gefunden oder exportiert." -ForegroundColor Yellow
+        }
+    }
+    catch {
+        Write-Host "[FEHLER] Fehler beim Exportieren der WLAN Profile: $_" -ForegroundColor Red
+        return $false
+    }
+    
+    Write-Host "---------WLAN Profile Export abgeschlossen---------" -ForegroundColor Cyan
+    return $true
+}
+
+# 14. WLAN Profile importieren
+function Import-WlanProfiles {
+    Write-Host "`n=============================================================================================================="
+    Write-Host "                WLAN Profile importieren"
+    Write-Host "=============================================================================================================="
+    Write-Host ""
+    
+    if (-not $script:GlobalBackupBaseDir) {
+        Write-Host "[FEHLER] Globales Backup-Basisverzeichnis ist nicht gesetzt. Aktion uebersprungen." -ForegroundColor Red
+        return $false
+    }
+
+    $srcDir = Join-Path $script:GlobalBackupBaseDir "WLAN-Profile"
+    
+    if (-not (Test-Path $srcDir)) {
+        Write-Host "[FEHLER] Der Ordner '$srcDir' wurde nicht gefunden." -ForegroundColor Red
+        return $false
+    }
+
+    Write-Host "---------Importiere WLAN Profile aus '$srcDir'---------" -ForegroundColor Cyan
+    
+    $xmlFiles = Get-ChildItem -Path $srcDir -Filter "*.xml"
+    
+    if ($xmlFiles.Count -eq 0) {
+        Write-Host "[WARNUNG] Keine XML-Dateien im Ordner gefunden." -ForegroundColor Yellow
+        return $false
+    }
+
+    foreach ($file in $xmlFiles) {
+        try {
+            Write-Host "[INFO] Importiere Profil: $($file.Name)..."
+            netsh wlan add profile filename="$($file.FullName)"
+        }
+        catch {
+            Write-Host "[FEHLER] Konnte $($file.Name) nicht importieren: $_" -ForegroundColor Red
+        }
+    }
+
+    Write-Host "---------WLAN Profile Import abgeschlossen---------" -ForegroundColor Cyan
+    return $true
+}
+
+# 8. Windows Benutzerprofil wiederherstellen
 function Restore-UserProfile {
     Write-Host "`n=============================================================================================================="
     Write-Host "                Windows Benutzerprofil wiederherstellen"
@@ -363,21 +518,26 @@ function Restore-UserProfile {
 
     Write-Host "---------Die Wiederherstellung des kompletten Benutzerprofils von '$backupSourceDir' nach '$destDir' wird ausgefuehrt---------" -ForegroundColor Cyan
     
-    # --- MODIFIZIERT: Sicherheitsabfrage entfernt ---
     Write-Host "[WARNUNG] Diese Aktion ueberschreibt Daten im Zielverzeichnis '$destDir'." -ForegroundColor Yellow
 
-    Write-Host "[INFO] Starte Robocopy f r Benutzerprofil-Wiederherstellung. Dies kann einige Zeit dauern..."
+    Write-Host "[INFO] Starte Robocopy fuer Benutzerprofil-Wiederherstellung. Dies kann einige Zeit dauern..."
     $robocopyArgs = @(
         "`"$backupSourceDir`"",
         "`"$destDir`"",
-        "/E", "/ZB", "/COPYALL", "/R:1", "/W:1", "/MT:4", "/ETA"
+        "/E", "/ZB", "/COPYALL", "/R:1", "/W:1", "/MT:32", "/ETA"
     )
+    # Performance-Optimierung
+    if ($script:FastMode) {
+        $robocopyArgs += "/NP", "/NFL", "/NDL"
+    }
+
     Write-Host "Robocopy Befehl: robocopy $($robocopyArgs -join ' ')"
     & robocopy @robocopyArgs 2>&1 | Out-Host
 
     if ($LASTEXITCODE -lt 8) {
         Write-Host "[ERFOLG] Das Benutzerprofil wurde erfolgreich wiederhergestellt nach '$destDir'." -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "[FEHLER] Fehler bei der Wiederherstellung des Benutzerprofils. Robocopy Fehlercode: $LASTEXITCODE" -ForegroundColor Red
         return $false
     }
@@ -385,7 +545,7 @@ function Restore-UserProfile {
     return $true
 }
 
-# Hilfsfunktion f r Profil-Backups (Firefox, Edge, Chrome, Thunderbird)
+# Hilfsfunktion fuer Profil-Backups (Firefox, Edge, Chrome, Thunderbird)
 function Backup-ApplicationProfile {
     param (
         [string]$AppName,
@@ -393,7 +553,6 @@ function Backup-ApplicationProfile {
         [string]$ProcessName
     )
 
-    # Update-Check f r bestimmte Anwendungen
     if ($AppName -eq "Firefox") {
         Invoke-AppUpdateCheckAndInstall -AppName "Firefox" -ExeName "firefox.exe"
     }
@@ -428,18 +587,25 @@ function Backup-ApplicationProfile {
         $robocopyArgs = @(
             "`"$appProfilePath`"",
             "`"$targetBackupDir`"",
-            "/MIR", "/R:1", "/W:1", "/MT:4", "/ETA" 
+            "/MIR", "/R:1", "/W:1", "/MT:32", "/ETA" 
         )
+        # Performance-Optimierung
+        if ($script:FastMode) {
+            $robocopyArgs += "/NP", "/NFL", "/NDL"
+        }
+
         Write-Host "Robocopy Befehl: robocopy $($robocopyArgs -join ' ')"
         & robocopy @robocopyArgs 2>&1 | Out-Host
 
         if ($LASTEXITCODE -lt 8) {
             Write-Host "[ERFOLG] Das $AppName-Profil wurde erfolgreich gesichert nach '$targetBackupDir'." -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "[FEHLER] Fehler beim Sichern des $AppName-Profils. Robocopy Fehlercode: $LASTEXITCODE" -ForegroundColor Red
             return $false
         }
-    } else {
+    }
+    else {
         Write-Host "[FEHLER] Das $AppName-Profil wurde unter '$appProfilePath' nicht gefunden." -ForegroundColor Red
         return $false
     }
@@ -447,7 +613,7 @@ function Backup-ApplicationProfile {
     return $true
 }
 
-# Hilfsfunktion f r Profil-Wiederherstellung
+# Hilfsfunktion fuer Profil-Wiederherstellung
 function Restore-ApplicationProfile {
     param (
         [string]$AppName,
@@ -455,12 +621,11 @@ function Restore-ApplicationProfile {
         [string]$ProcessName
     )
     
-    # Zuerst pr fen, ob App installiert ist; dann auf Updates pr fen
     # 1. Sicherstellen, dass die Anwendung installiert ist
     $exeName = "$ProcessName.exe"
-    Ensure-AppIsInstalled -AppName $AppName -ExeName $exeName
+    Install-App -AppName $AppName -ExeName $exeName
 
-    # 2. Update-Check f r bestimmte Anwendungen
+    # 2. Update-Check fuer bestimmte Anwendungen
     if ($AppName -eq "Firefox") {
         Invoke-AppUpdateCheckAndInstall -AppName "Firefox" -ExeName "firefox.exe"
     }
@@ -489,7 +654,6 @@ function Restore-ApplicationProfile {
     $targetAppProfileDir = Join-Path $targetUserDir $ProfilePathInUserDir
     Write-Host "---------Die Wiederherstellung von $AppName-Profil von '$backupSourceDir' nach '$targetAppProfileDir' wird ausgefuehrt---------" -ForegroundColor Cyan
 
-    # --- MODIFIZIERT: Sicherheitsabfrage entfernt ---
     Write-Host "[WARNUNG] Diese Aktion ueberschreibt Daten im Zielverzeichnis '$targetAppProfileDir'." -ForegroundColor Yellow
     
     Write-Host "[INFO] Der $AppName ($ProcessName) wird nun beendet (falls er laeuft)..."
@@ -502,7 +666,8 @@ function Restore-ApplicationProfile {
         try {
             Remove-Item -Path $targetAppProfileDir -Recurse -Force -ErrorAction Stop
             Write-Host "[INFO] Altes Profilverzeichnis '$targetAppProfileDir' geloescht."
-        } catch {
+        }
+        catch {
             Write-Warning "Konnte das alte Profilverzeichnis '$targetAppProfileDir' nicht vollstaendig loeschen: $($_.Exception.Message). Wiederherstellung koennte fehlschlagen."
         }
         Start-Sleep -Seconds 2
@@ -515,14 +680,20 @@ function Restore-ApplicationProfile {
     $robocopyArgs = @(
         "`"$backupSourceDir`"",
         "`"$targetAppProfileDir`"",
-        "/MIR", "/R:1", "/W:1", "/MT:4", "/ETA"
+        "/MIR", "/R:1", "/W:1", "/MT:32", "/ETA"
     )
+    # Performance-Optimierung
+    if ($script:FastMode) {
+        $robocopyArgs += "/NP", "/NFL", "/NDL"
+    }
+
     Write-Host "Robocopy Befehl: robocopy $($robocopyArgs -join ' ')"
     & robocopy @robocopyArgs 2>&1 | Out-Host
 
     if ($LASTEXITCODE -lt 8) {
         Write-Host "[ERFOLG] Das $AppName-Profil wurde erfolgreich wiederhergestellt nach '$targetAppProfileDir'." -ForegroundColor Green
-    } else {
+    }
+    else {
         Write-Host "[FEHLER] Fehler bei der Wiederherstellung des $AppName-Profils. Robocopy Fehlercode: $LASTEXITCODE" -ForegroundColor Red
         return $false
     }
@@ -541,7 +712,7 @@ function Export-WingetPackages {
         Write-Host "[FEHLER] Globales Backup-Basisverzeichnis ist nicht gesetzt. Aktion uebersprungen." -ForegroundColor Red
         return $false
     }
-    $destDir = $script:GlobalBackupBaseDir # Winget Export geht ins Backup-Basisverzeichnis
+    $destDir = $script:GlobalBackupBaseDir
 
     Write-Host "---------Eine Liste der Installierten Programme wird nach '$destDir\Winget' exportiert---------" -ForegroundColor Cyan
 
@@ -549,7 +720,8 @@ function Export-WingetPackages {
     if (-not (Test-Path $wingetDir)) {
         try {
             New-Item -ItemType Directory -Path $wingetDir -Force -ErrorAction Stop | Out-Null
-        } catch {
+        }
+        catch {
             Write-Host "[FEHLER] Konnte Winget-Verzeichnis '$wingetDir' nicht erstellen: $($_.Exception.Message)" -ForegroundColor Red
             return $false
         }
@@ -565,11 +737,13 @@ function Export-WingetPackages {
         winget export -o "`"$exportFile`"" --accept-source-agreements
         if ($LASTEXITCODE -eq 0) {
             Write-Host "[ERFOLG] Programmliste erfolgreich nach '$exportFile' exportiert." -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "[FEHLER] Fehler beim Exportieren der Programmliste mit winget. Winget Fehlercode: $LASTEXITCODE" -ForegroundColor Red
             return $false 
         }
-    } catch {
+    }
+    catch {
         Write-Host "[FEHLER] Winget-Befehl fehlgeschlagen: $($_.Exception.Message)" -ForegroundColor Red
         return $false 
     }
@@ -577,7 +751,7 @@ function Export-WingetPackages {
     return $true
 }
 
-# 12. Liste von installierten Programmen installieren (Winget)
+# 13. Liste von installierten Programmen installieren (Winget)
 function Import-WingetPackages {
     Write-Host "`n=============================================================================================================="
     Write-Host "                Liste von installierten Programmen installieren"
@@ -588,21 +762,21 @@ function Import-WingetPackages {
         Write-Host "[FEHLER] Globales Backup-Basisverzeichnis ist nicht gesetzt. Aktion uebersprungen." -ForegroundColor Red
         return $false
     }
-    $importFileDir = $script:GlobalBackupBaseDir # Winget Import kommt aus dem Backup-Basisverzeichnis
+    $importFileDir = $script:GlobalBackupBaseDir
     
     Write-Host "---------Die exportierte Liste der Programme aus '$importFileDir\Winget\Export.json' wird installiert---------" -ForegroundColor Cyan
     
     $importFile = Join-Path $importFileDir "Winget\Export.json"
     if (-not (Test-Path $importFile)) {
-         # Fallback, falls die Datei direkt im BackupBaseDir liegt (alte Struktur)
-         $importFileAlt = Join-Path $importFileDir "Export.json"
-         if (Test-Path $importFileAlt) {
+        $importFileAlt = Join-Path $importFileDir "Export.json"
+        if (Test-Path $importFileAlt) {
             $importFile = $importFileAlt
             Write-Warning "Winget Export.json in '$importFileDir\Winget' nicht gefunden, verwende '$importFileAlt'."
-         } else {
+        }
+        else {
             Write-Host "[FEHLER] Winget Importdatei 'Export.json' nicht im Ordner '$importFileDir\Winget' oder direkt in '$importFileDir' gefunden." -ForegroundColor Red
             return $false 
-         }
+        }
     }
 
     try {
@@ -615,10 +789,12 @@ function Import-WingetPackages {
         winget import -i "`"$importFile`"" --accept-package-agreements --accept-source-agreements
         if ($LASTEXITCODE -eq 0) { 
             Write-Host "[ERFOLG] Programme von '$importFile' wurden (versucht) zu installieren." -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "[WARNUNG] Winget Import beendet mit Code $LASTEXITCODE. Einige Installationen koennten fehlgeschlagen sein. Bitte Ausgabe pruefen." -ForegroundColor Yellow
         }
-    } catch {
+    }
+    catch {
         Write-Host "[FEHLER] Winget-Befehl fehlgeschlagen: $($_.Exception.Message)" -ForegroundColor Red
         return $false 
     }
@@ -627,7 +803,7 @@ function Import-WingetPackages {
 }
 
 
-# --- Hauptmen  ---
+# --- Hauptmenue ---
 function Show-MainMenu {
     param(
         [string]$Version,
@@ -635,49 +811,82 @@ function Show-MainMenu {
     )
     Clear-Host
     $Host.UI.RawUI.WindowTitle = "DASI-Skript - Hauptmenue"
-    Write-Host "=============================================================================================================="
-    Write-Host "                                    DASI-Skript - Hauptmenue"
-    Write-Host "=============================================================================================================="
+    Write-Host "======================================================================================="
+    Write-Host "                               DASI-Skript - Hauptmenue"
+    Write-Host "======================================================================================="
     Write-Host "DASI-Skript Version $Version von $Build"
     Write-Host ""
     Write-Host "Aktuell ausgewaehltes Quell-Benutzerprofil: $($script:GlobalSourceUserProfileDir)"
     Write-Host "Aktuell ausgewaehltes Backup-Basisverzeichnis: $($script:GlobalBackupBaseDir)"
-    Write-Host "--------------------------------------------------------------------------------------------------------------"
+    Write-Host "Aktueller Performance-Modus: $(if($script:FastMode){'Minimales Logging (Aktiv)'}else{'Ausfuehrlich (Inaktiv)'})"
+    Write-Host "---------------------------------------------------------------------------------------"
     Write-Host "   [P] Pfade neu auswaehlen (Benutzerprofil und Backup-Basisverzeichnis)"
-    Write-Host "--------------------------------------------------------------------------------------------------------------"
-    Write-Host "   [1] Windows Benutzerprofil sichern                  [7] Windows Benutzerprofil wiederherstellen"
-    Write-Host "   [2] Firefox-Profil sichern                          [8] Firefox-Profil wiederherstellen"
-    Write-Host "   [3] Edge-Profil sichern                             [9] Edge-Profil wiederherstellen"
-    Write-Host "   [4] Chrome-Profil sichern                           [10] Chrome-Profil wiederherstellen"
-    Write-Host "   [5] Thunderbird-Profil sichern                      [11] Thunderbird-Profil wiederherstellen"
-    Write-Host "   [6] Liste von installierten Programmen exportieren  [12] Liste von installierten Programmen installieren"
+    Write-Host "---------------------------------------------------------------------------------------"
+    Write-Host "   --- SICHERN ---                                     --- WIEDERHERSTELLEN ---"
+    Write-Host "   [1] Windows Benutzerprofil sichern                  [8]  Windows Benutzerprofil wiederherstellen"
+    Write-Host "   [2] Firefox-Profil sichern                          [9]  Firefox-Profil wiederherstellen"
+    Write-Host "   [3] Edge-Profil sichern                             [10] Edge-Profil wiederherstellen"
+    Write-Host "   [4] Chrome-Profil sichern                           [11] Chrome-Profil wiederherstellen"
+    Write-Host "   [5] Thunderbird-Profil sichern                      [12] Thunderbird-Profil wiederherstellen"
+    Write-Host "   [6] Liste installierter Programme exportieren       [13] Liste installierter Programme installieren"
+    Write-Host "   [7] WLAN Profile exportieren                        [14] WLAN Profile importieren"
     Write-Host ""
     Write-Host "   [Q] Beenden"
-    Write-Host "=============================================================================================================="
-    Write-Host "Geben Sie eine oder mehrere Zahlen/Buchstaben kommagetrennt ein (z.B. 1,2,6) oder 'Q' zum Beenden."
+    Write-Host "======================================================================================="
+    Write-Host "Geben Sie eine oder mehrere Zahlen/Buchstaben kommagetrennt ein (z.B. 1,2,7) oder 'Q' zum Beenden."
 }
 
-# Funktion zur einmaligen Auswahl der globalen Pfade
+# --- NEU/ANGEPASST: Globale Pfadauswahl mit NTFS-Pruefung fuer Backup-Drive ---
 function Select-GlobalPaths {
     Write-Host "`n--- Globale Pfadauswahl ---" -ForegroundColor Green
-    $tempSourceProfile = Select-FolderDialog -Description "BITTE WAEHLEN: Den Quell-Benutzerprofilordner (z.B. C:\Users\DeinName)"
+    
+    # 1. Quell-Benutzerprofil auswaehlen
+    $tempSourceProfile = Select-FolderDialog -Description "Bitte waehlen Sie das lokale Benutzerprofil aus (C:\Users\Name), das gesichert oder wiederhergestellt werden soll."
     if (-not $tempSourceProfile) {
         Write-Host "[FEHLER] Kein Quell-Benutzerprofilordner ausgewaehlt. Das Skript kann nicht fortfahren." -ForegroundColor Red
         Invoke-PauseAndExit
     }
     $script:GlobalSourceUserProfileDir = $tempSourceProfile
 
-    $tempBackupBase = Select-FolderDialog -Description "BITTE WAEHLEN: Das Hauptverzeichnis fuer alle Backups aus."
+    # 2. Backup-Basisverzeichnis auswaehlen
+    $tempBackupBase = Select-FolderDialog -Description "Bitte waehlen Sie den Speicherort aus, an den die Daten gesichert oder von dem sie wiederhergestellt werden sollen."
     if (-not $tempBackupBase) {
         Write-Host "[FEHLER] Kein Backup-Basisverzeichnis ausgewaehlt. Das Skript kann nicht fortfahren." -ForegroundColor Red
         Invoke-PauseAndExit
     }
+
+    # Pruefung auf NTFS-Formatierung des Backup-Laufwerks
+    Write-Host "[INFO] Pruefe Dateisystem des Backup-Laufwerks..." -ForegroundColor Cyan
+    if (-not (Test-IsNtfsDrive -Path $tempBackupBase)) {
+        Write-Host ""
+        Write-Host "==========================================================================================" -ForegroundColor Red
+        Write-Host "[FEHLER] Das ausgewaehlte Backup-Laufwerk ist NICHT mit NTFS formatiert!" -ForegroundColor Red
+        Write-Host "Robocopy benoetigt zwingend ein NTFS-Dateisystem, um Dateiberechtigungen (ACLs)" -ForegroundColor Red
+        Write-Host "und Dateien, die groesser als 4 GB sind, korrekt sichern zu koennen." -ForegroundColor Red
+        Write-Host "Bitte formatieren Sie den Datentraeger in NTFS oder waehlen Sie einen anderen." -ForegroundColor Red
+        Write-Host "==========================================================================================" -ForegroundColor Red
+        Invoke-PauseAndExit
+    }
+
+    # NEU: Abfrage fuer Performance-Modus
+    Write-Host ""
+    $fastModeChoice = Read-Host "Moechten Sie das detaillierte Logging deaktivieren? (Empfohlen fuer bessere Performance) (J/N)"
+    if ($fastModeChoice -eq 'j' -or $fastModeChoice -eq 'J') {
+        $script:FastMode = $true
+        Write-Host "[INFO] Performance-Modus AKTIVIERT (Minimales Logging)." -ForegroundColor Cyan
+    } else {
+        $script:FastMode = $false
+        Write-Host "[INFO] Performance-Modus DEAKTIVIERT (Detailliertes Logging)." -ForegroundColor Yellow
+    }
+
     $script:GlobalBackupBaseDir = $tempBackupBase
     Write-Host "[INFO] Quell-Benutzerprofil gesetzt auf: $($script:GlobalSourceUserProfileDir)" -ForegroundColor Green
     Write-Host "[INFO] Backup-Basisverzeichnis gesetzt auf: $($script:GlobalBackupBaseDir)" -ForegroundColor Green
+    Write-Host "[ERFOLG] Dateisystem-Pruefung bestanden (NTFS)." -ForegroundColor Green
     Write-Host "-----------------------------------"
     Start-Sleep -Seconds 2
 }
+# ------------------------------------------------------------------------------
 
 
 # --- Skriptablauf ---
@@ -685,11 +894,11 @@ function Select-GlobalPaths {
 # Globale Pfade einmalig abfragen
 Select-GlobalPaths
 
-# Hauptschleife f r Men 
+# Hauptschleife fuer Menue
 do {
     Show-MainMenu -Version $script:VersionString -Build $script:BuildString
     $choicesString = Read-Host "Ihre Auswahl"
-    $choicesArray = $choicesString.Trim() -split ',' | ForEach-Object {$_.Trim().ToUpper()} # Eingabe in Gro buchstaben umwandeln
+    $choicesArray = $choicesString.Trim() -split ',' | ForEach-Object { $_.Trim().ToUpper() }
 
     if ($choicesArray -contains "Q") {
         Write-Host "Skript wird auf Wunsch beendet."
@@ -699,7 +908,6 @@ do {
     
     if ($choicesArray -contains "P") {
         Select-GlobalPaths
-        # Nach Neuauswahl der Pfade direkt zum Men  zur ckkehren, ohne weitere Aktionen aus dieser Eingabe zu verarbeiten
         continue 
     }
 
@@ -708,14 +916,38 @@ do {
     $currentChoiceIndex = 0
 
     foreach ($choice in $choicesArray) {
-        if ($choice -eq "P") { continue } # "P" wurde bereits behandelt
+        if ($choice -eq "P") { continue } 
 
         $currentChoiceIndex++
         $actionInvokedAndSuccessful = $false
         $actionAttempted = $true 
 
+        $actionNames = @{
+            "1"  = "Windows Benutzerprofil sichern"
+            "2"  = "Firefox-Profil sichern"
+            "3"  = "Edge-Profil sichern"
+            "4"  = "Chrome-Profil sichern"
+            "5"  = "Thunderbird-Profil sichern"
+            "6"  = "Installierte Programme exportieren (Winget)"
+            "7"  = "WLAN Profile exportieren"
+            "8"  = "Windows Benutzerprofil wiederherstellen"
+            "9"  = "Firefox-Profil wiederherstellen"
+            "10" = "Edge-Profil wiederherstellen"
+            "11" = "Chrome-Profil wiederherstellen"
+            "12" = "Thunderbird-Profil wiederherstellen"
+            "13" = "Installierte Programme installieren (Winget)"
+            "14" = "WLAN Profile importieren"
+        }
+
+        if ($actionNames.ContainsKey($choice)) {
+            $displayText = $actionNames[$choice]
+        }
+        else {
+            $displayText = "Unbekannte Auswahl ($choice)"
+        }
+
         Write-Host "`n=============================================================================================================="
-        Write-Host " Verarbeitung der Auswahl: '$choice' (Aktion $currentChoiceIndex von $numberOfChoices)" -ForegroundColor Yellow
+        Write-Host " Verarbeitung: '$displayText' (Aktion $currentChoiceIndex von $numberOfChoices)" -ForegroundColor Yellow
         Write-Host "=============================================================================================================="
         Start-Sleep -Seconds 1
 
@@ -726,12 +958,16 @@ do {
             "4" { $actionInvokedAndSuccessful = Backup-ApplicationProfile -AppName "Chrome" -ProfilePathInUserDir "AppData\Local\Google\Chrome\User Data\Default" -ProcessName "chrome" }
             "5" { $actionInvokedAndSuccessful = Backup-ApplicationProfile -AppName "Thunderbird" -ProfilePathInUserDir "AppData\Roaming\Thunderbird" -ProcessName "thunderbird" }
             "6" { $actionInvokedAndSuccessful = Export-WingetPackages }
-            "7" { $actionInvokedAndSuccessful = Restore-UserProfile }
-            "8" { $actionInvokedAndSuccessful = Restore-ApplicationProfile -AppName "Firefox" -ProfilePathInUserDir "AppData\Roaming\Mozilla\Firefox" -ProcessName "firefox" }
-            "9" { $actionInvokedAndSuccessful = Restore-ApplicationProfile -AppName "Edge" -ProfilePathInUserDir "AppData\Local\Microsoft\Edge\User Data\Default" -ProcessName "msedge" }
-            "10"{ $actionInvokedAndSuccessful = Restore-ApplicationProfile -AppName "Chrome" -ProfilePathInUserDir "AppData\Local\Google\Chrome\User Data\Default" -ProcessName "chrome" }
-            "11"{ $actionInvokedAndSuccessful = Restore-ApplicationProfile -AppName "Thunderbird" -ProfilePathInUserDir "AppData\Roaming\Thunderbird" -ProcessName "thunderbird" }
-            "12"{ $actionInvokedAndSuccessful = Import-WingetPackages }
+            "7" { $actionInvokedAndSuccessful = Export-WlanProfiles }
+
+            "8" { $actionInvokedAndSuccessful = Restore-UserProfile }
+            "9" { $actionInvokedAndSuccessful = Restore-ApplicationProfile -AppName "Firefox" -ProfilePathInUserDir "AppData\Roaming\Mozilla\Firefox" -ProcessName "firefox" }
+            "10" { $actionInvokedAndSuccessful = Restore-ApplicationProfile -AppName "Edge" -ProfilePathInUserDir "AppData\Local\Microsoft\Edge\User Data\Default" -ProcessName "msedge" }
+            "11" { $actionInvokedAndSuccessful = Restore-ApplicationProfile -AppName "Chrome" -ProfilePathInUserDir "AppData\Local\Google\Chrome\User Data\Default" -ProcessName "chrome" }
+            "12" { $actionInvokedAndSuccessful = Restore-ApplicationProfile -AppName "Thunderbird" -ProfilePathInUserDir "AppData\Roaming\Thunderbird" -ProcessName "thunderbird" }
+            "13" { $actionInvokedAndSuccessful = Import-WingetPackages }
+            "14" { $actionInvokedAndSuccessful = Import-WlanProfiles }
+
             default {
                 Write-Host "[FEHLER] Ungueltige Auswahl: '$choice'. Diese Auswahl wird uebersprungen." -ForegroundColor Red
                 $actionAttempted = $false
@@ -741,36 +977,37 @@ do {
         if ($actionAttempted) {
             $validActionChosenOrAttempted = $true
             if ($actionInvokedAndSuccessful) {
-                Write-Host "[ERFOLG] Aktion '$choice' erfolgreich abgeschlossen." -ForegroundColor Green
-            } else {
-                Write-Host "[WARNUNG] Aktion '$choice' wurde NICHT erfolgreich ausgefuehrt oder vom Benutzer abgebrochen." -ForegroundColor Yellow
+                Write-Host "[ERFOLG] Aktion '$displayText' erfolgreich abgeschlossen." -ForegroundColor Green
+            }
+            else {
+                Write-Host "[WARNUNG] Aktion '$displayText' wurde NICHT erfolgreich ausgefuehrt oder vom Benutzer abgebrochen." -ForegroundColor Yellow
             }
         }
         
         if ($currentChoiceIndex -lt $numberOfChoices) { 
             if ($actionAttempted) {
-                 Write-Host "`nNaechste Aktion in 10 Sekunden..."
-                 Start-Sleep -Seconds 10
-            } else {
+                Write-Host "`nNaechste Aktion in 10 Sekunden..."
+                Start-Sleep -Seconds 10
+            }
+            else {
                 Write-Host "`nUngueltige Auswahl '$choice' uebersprungen. Fahre mit naechster Auswahl fort (falls vorhanden)..."
                 Start-Sleep -Seconds 2 
             }
         }
-    }
+    } 
 
     if ($validActionChosenOrAttempted) {
         Write-Host "`nAlle ausgewaehlten Aktionen wurden abgearbeitet. Kehre zum Hauptmenue zurueck oder 'Q' zum Beenden." -ForegroundColor Green
         Write-Host "Druecken Sie eine Taste, um zum Menue zurueckzukehren..." -NoNewline
         if ($Host.Name -eq "ConsoleHost") { $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null } else { Read-Host | Out-Null }
-    } elseif ($choicesArray.Count -gt 0 -and -not ($choicesArray -contains "P")) { # Nur pausieren, wenn ung ltige Eingaben gemacht wurden, aber nicht "P"
+    }
+    elseif ($choicesArray.Count -gt 0 -and -not ($choicesArray -contains "P")) { 
         Write-Host "`nKeine gueltigen Aktionen zur Ausfuehrung ausgewaehlt oder alle Eingaben waren ungueltig." -ForegroundColor Yellow
         Write-Host "Druecken Sie eine Taste, um zum Menue zurueckzukehren..." -NoNewline
         if ($Host.Name -eq "ConsoleHost") { $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null } else { Read-Host | Out-Null }
     }
-    # Wenn keine Eingabe erfolgte (leere Zeile), wird die Schleife wiederholt und das Men  erneut angezeigt.
 
-} while ($true) # Endlosschleife, Beendigung durch 'Q'
+} while ($true)
 
-# Das Skript sollte hier nie ankommen, da es durch 'exit' in der Schleife oder Invoke-PauseAndExit beendet wird.
 Write-Host "Das Skript wird in 5 Sekunden geschlossen."
 Start-Sleep -Seconds 5

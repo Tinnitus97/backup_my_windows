@@ -16,7 +16,7 @@ SET "powershellScript=%~dp0%scriptName%"
 
 
 :: Pruefen, ob die angegebene PowerShell-Datei existiert.
-echo Pruefe auf Existenz der Datei: "%powershellScript%"
+REM echo Pruefe auf Existenz der Datei: "%powershellScript%"
 if not exist "%powershellScript%" (
     echo.
     echo FEHLER: Die Datei "%scriptName%" konnte nicht im aktuellen Verzeichnis gefunden werden.
@@ -26,16 +26,16 @@ if not exist "%powershellScript%" (
     exit /b 1
 )
 
-echo Die Datei wurde gefunden.
-echo.
-echo Versuch, das Skript mit Administratorrechten zu starten...
-echo.
+REM echo Die Datei wurde gefunden.
+REM echo.
+REM echo Versuch, das Skript mit Administratorrechten zu starten...
+REM echo.
 
 
 :: Der Kernbefehl zum Starten mit Admin-Rechten.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File ""%powershellScript%""' -Verb RunAs"
 
 
-echo Der Befehl wurde abgesetzt. Das Skript wird in einem neuen Fenster ausgefuehrt.
-echo.
+REM echo Der Befehl wurde abgesetzt. Das Skript wird in einem neuen Fenster ausgefuehrt.
+REM echo.
 endlocal
